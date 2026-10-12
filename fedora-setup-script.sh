@@ -174,7 +174,21 @@ UNWANTED_PACKAGES=(
     neochat
 )
 
-if sudo dnf remove -y --skip-unavailable "${UNWANTED_PACKAGES[@]}"; then
+# DNF5 does not support --skip-unavailable for remove. Resolve wildcard
+# patterns against installed RPMs and pass only installed package names to DNF.
+INSTALLED_UNWANTED=()
+for package in "${UNWANTED_PACKAGES[@]}"; do
+    if [[ "$package" == *"*"* ]]; then
+        while IFS= read -r installed; do
+            [[ -n "$installed" ]] && INSTALLED_UNWANTED+=("$installed")
+        done < <(rpm -qa --qf '%{NAME}\n' "$package" 2>/dev/null || true)
+    elif rpm -q "$package" >/dev/null 2>&1; then
+        INSTALLED_UNWANTED+=("$package")
+    fi
+done
+if ((${#INSTALLED_UNWANTED[@]} == 0)); then
+    ok "No matching unwanted packages are installed."
+elif sudo dnf remove -y "${INSTALLED_UNWANTED[@]}"; then
     ok "Unwanted package cleanup completed."
 else
     warn "Some unwanted packages could not be removed. Continuing."
@@ -637,15 +651,26 @@ fi
 
 log "Configuring VS Code as the default text editor"
 
-if command -v gio >/dev/null 2>&1 && command -v code >/dev/null 2>&1; then
-    if gio mime text/plain code.desktop >/dev/null 2>&1; then
+if command -v xdg-mime >/dev/null 2>&1 && command -v code >/dev/null 2>&1; then
+    VSCODE_DESKTOP_ID=""
+    for candidate in code.desktop com.visualstudio.code.desktop; do
+        if [[ -f "/usr/share/applications/$candidate" ]] ||
+           [[ -f "$REAL_HOME/.local/share/applications/$candidate" ]]; then
+            VSCODE_DESKTOP_ID="$candidate"
+            break
+        fi
+    done
+
+    if [[ -n "$VSCODE_DESKTOP_ID" ]] &&
+       xdg-mime default "$VSCODE_DESKTOP_ID" text/plain &&
+       [[ "$(xdg-mime query default text/plain 2>/dev/null || true)" == "$VSCODE_DESKTOP_ID" ]]; then
         ok "VS Code configured as the text/plain editor."
     else
-        warn "Could not set VS Code as the text/plain default."
+        warn "Could not set VS Code as the text/plain default (desktop handler not found or MIME update failed)."
         record_warning "Could not set VS Code as the text/plain default."
     fi
 else
-    warn "gio or code is unavailable; skipping text editor configuration."
+    warn "xdg-mime or code is unavailable; skipping text editor configuration."
     record_warning "VS Code default-editor configuration skipped."
 fi
 
@@ -719,7 +744,7 @@ log "Enabling NumLock for KDE Plasma and Plasma Login Manager"
 if command -v kwriteconfig6 >/dev/null 2>&1; then
     run_optional \
         "Could not configure per-user Plasma NumLock." \
-        kwriteconfig6 --file kcminputrc --group Keyboard --key NumLock 0
+        kwriteconfig6 --file kcminputrc --group Keyboard --key NumLock 1
 else
     warn "kwriteconfig6 unavailable; skipping per-user NumLock configuration."
 fi
@@ -915,7 +940,7 @@ if command -v zsh >/dev/null 2>&1; then
 else
     warn "Zsh is not installed; keeping the existing login shell."
     record_warning "Zsh login shell was skipped."
-    ZSH_PATH="$CURRENT_LOGIN_SHELL"
+    ZSH_PATH=""
 fi
 
 ###############################################################################
