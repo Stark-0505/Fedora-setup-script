@@ -986,7 +986,31 @@ else
 fi
 
 ###############################################################################
-# 20. Final status
+# 20. Morphe Desktop
+###############################################################################
+
+log "Installing Morphe Desktop"
+
+MORPHE_INSTALL_URL="https://raw.githubusercontent.com/Stark-0505/Fedora-setup-script/main/morphe-install.sh"
+MORPHE_INSTALL_TMP="$(mktemp)"
+
+if curl -fLsS --retry 3 --retry-all-errors --connect-timeout 20 \
+    "$MORPHE_INSTALL_URL" -o "$MORPHE_INSTALL_TMP"; then
+    if bash "$MORPHE_INSTALL_TMP"; then
+        ok "Morphe Desktop installed."
+        record_success "Morphe Desktop installed."
+    else
+        warn "Morphe Desktop installer failed; continuing Fedora setup."
+        record_warning "Morphe Desktop installation failed."
+    fi
+else
+    warn "Could not download the Morphe Desktop installer; continuing Fedora setup."
+    record_warning "Morphe Desktop installer download failed."
+fi
+rm -f "$MORPHE_INSTALL_TMP"
+
+###############################################################################
+# 21. Final status
 ###############################################################################
 
 printf '\n'
